@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Linq.Expressions;
-using System.Reflection;
 using System.Xml.Linq;
 
 namespace XMap
@@ -15,8 +13,6 @@ namespace XMap
     /// <typeparam name="T">The type of the object graph root.</typeparam>
     public class XmlMapper<T> : IEnumerable where T : class, new()
     {
-        private readonly XmlToObjectActionGenerator<T> _xmlToObjectActionGenerator = new XmlToObjectActionGenerator<T>();
-
         private readonly Dictionary<XName, Action<string, T>> _attributeActions =
             new Dictionary<XName, Action<string, T>>();
 
@@ -38,6 +34,9 @@ namespace XMap
 
         private readonly Dictionary<Tuple<XName, XName>, Action<string, string, T>> _multiAttributeActions =
             new Dictionary<Tuple<XName, XName>, Action<string, string, T>>();
+
+        private readonly ObjectToXmlFuncGenerator<T> _objectToXmlFuncGenerator = new ObjectToXmlFuncGenerator<T>();
+        private readonly XmlToObjectActionGenerator<T> _xmlToObjectActionGenerator = new XmlToObjectActionGenerator<T>();
 
         IEnumerator IEnumerable.GetEnumerator()
         {
@@ -148,43 +147,21 @@ namespace XMap
         private void AddAttributeFunc<TProperty>(XName name, Expression<Func<T, TProperty>> propFunc,
                                                  Expression<Func<TProperty, string>> toStringFunc = null)
         {
-            var itemParam = Expression.Parameter(typeof (T));
-            var invoke = Expression.Invoke(propFunc, itemParam);
-            Expression toString;
-            if (toStringFunc == null)
-            {
-                toString = Helpers.MakeToStringCall<TProperty>(invoke);
-            }
-            else
-            {
-                toString = Expression.Invoke(toStringFunc, invoke);
-            }
-            Func<T, string> func = Expression.Lambda<Func<T, string>>(toString, itemParam).Compile();
+            Func<T, string> func = ObjectToXmlFuncGenerator<T>.GenerateAttributeFunc(propFunc, toStringFunc);
             _attributeFuncs.Add(name, func);
         }
 
         private void AddAttributePairFunc<TProperty>(Tuple<XName, XName> name, Expression<Func<T, TProperty>> propFunc,
                                                      Expression<Func<TProperty, Tuple<string, string>>> toStringsFunc)
         {
-            if (toStringsFunc == null) throw new ArgumentNullException("toStringsFunc");
-            var itemParam = Expression.Parameter(typeof (T));
-            var invoke = Expression.Invoke(propFunc, itemParam);
-            var toString = Expression.Invoke(toStringsFunc, invoke);
-            var func = Expression.Lambda<Func<T, Tuple<string, string>>>(toString, itemParam).Compile();
+            Func<T, Tuple<string, string>> func = ObjectToXmlFuncGenerator<T>.GenerateAttributePairFunc(propFunc, toStringsFunc);
             _attributePairFuncs.Add(name, func);
         }
 
         private void AddSingleElementFunc<TProperty>(XName name, Expression<Func<T, TProperty>> propFunc,
                                                      XmlMapper<TProperty> mapper) where TProperty : class, new()
         {
-            var itemParam = Expression.Parameter(typeof (T));
-            var invoke = Expression.Invoke(propFunc, itemParam);
-            var mapperConstant = Expression.Constant(mapper);
-            var nameConstant = Expression.Constant(name);
-            var toXml = mapper.GetType().GetMethod("ToXml", new[] {typeof (TProperty), typeof (XName)});
-            var callToXml = Expression.Call(mapperConstant, toXml, invoke, nameConstant);
-
-            var func = Expression.Lambda<Func<T, XElement>>(callToXml, itemParam).Compile();
+            Func<T, XElement> func = ObjectToXmlFuncGenerator<T>.GenerateSingleElemenetFunc(name, propFunc, mapper);
             _elementFuncs.Add(name, func);
         }
 
@@ -192,39 +169,8 @@ namespace XMap
                                                          Expression<Func<T, ICollection<TProperty>>> propFunc,
                                                          XmlMapper<TProperty> mapper) where TProperty : class, new()
         {
-            var itemParam = Expression.Parameter(typeof (T));
-            var invoke = Expression.Invoke(propFunc, itemParam);
-            var mapperConstant = Expression.Constant(mapper);
-
-            XName containerElementName;
-            XName childElementName;
-            GetContainerElementName(name, out containerElementName, out childElementName);
-
-            var containerNameConstant = Expression.Constant(containerElementName);
-            var childNameConstant = Expression.Constant(childElementName);
-            var propertyEnumerableType = typeof (IEnumerable<>).MakeGenericType(typeof (TProperty));
-            var toXml = mapper.GetType()
-                                     .GetMethod("ToXml", new[] {propertyEnumerableType, typeof (XName), typeof (XName)});
-            var callToXml = Expression.Call(mapperConstant, toXml, invoke, containerNameConstant,
-                                                             childNameConstant);
-
-            var func = Expression.Lambda<Func<T, XElement>>(callToXml, itemParam).Compile();
+            Func<T, XElement> func = ObjectToXmlFuncGenerator<T>.GenerateCollectionElementFunc(name, propFunc, mapper);
             _elementCollectionFuncs.Add(name, func);
-        }
-
-        private static void GetContainerElementName(string name, out XName containerElementName, out XName childElementName)
-        {
-            int slashIndex = name.IndexOf('/');
-            if (slashIndex < 0)
-            {
-                containerElementName = name;
-                childElementName = name + "Item";
-            }
-            else
-            {
-                containerElementName = name.Substring(0, slashIndex);
-                childElementName = name.Substring(slashIndex + 1);
-            }
         }
 
         /// <summary>
@@ -344,25 +290,45 @@ namespace XMap
         /// </returns>
         public XElement ToXml(T obj, XElement xml)
         {
-            foreach (var attributeFunc in _attributeFuncs)
+            MapToAttributes(obj, xml);
+            MapToMultipleAttributes(obj, xml);
+            MapToElements(obj, xml);
+            MapCollectionToElements(obj, xml);
+            return xml;
+        }
+
+        private void MapCollectionToElements(T obj, XElement xml)
+        {
+            foreach (var elementFunc in _elementCollectionFuncs)
             {
-                xml.SetAttributeValue(attributeFunc.Key, attributeFunc.Value(obj));
+                xml.Add(elementFunc.Value(obj));
             }
+        }
+
+        private void MapToElements(T obj, XElement xml)
+        {
+            foreach (var elementFunc in _elementFuncs)
+            {
+                xml.Add(elementFunc.Value(obj));
+            }
+        }
+
+        private void MapToMultipleAttributes(T obj, XElement xml)
+        {
             foreach (var attributePairFunc in _attributePairFuncs)
             {
                 Tuple<string, string> values = attributePairFunc.Value(obj);
                 xml.SetAttributeValue(attributePairFunc.Key.Item1, values.Item1);
                 xml.SetAttributeValue(attributePairFunc.Key.Item2, values.Item2);
             }
-            foreach (var elementFunc in _elementFuncs)
+        }
+
+        private void MapToAttributes(T obj, XElement xml)
+        {
+            foreach (var attributeFunc in _attributeFuncs)
             {
-                xml.Add(elementFunc.Value(obj));
+                xml.SetAttributeValue(attributeFunc.Key, attributeFunc.Value(obj));
             }
-            foreach (var elementFunc in _elementCollectionFuncs)
-            {
-                xml.Add(elementFunc.Value(obj));
-            }
-            return xml;
         }
 
         /// <summary>
