@@ -157,6 +157,7 @@
 
             var agency = actual.Element("agency");
             Assert.NotNull(agency);
+            Assert.Equal("NASA", agency.Attribute("name").Value);
         }
 
         [Fact]

@@ -6,7 +6,7 @@
     using System.Reflection;
     using System.Xml.Linq;
 
-    internal class ActionGenerator<TItem>
+    internal class XmlToObjectActionGenerator<TItem>
     {
         private Action<TItem> _setupAction;
         private readonly IDictionary<string, Expression> _setup = new Dictionary<string, Expression>();

@@ -96,12 +96,15 @@
         {
             var expressionText = array + "#" + binaryExpression.Right;
             if (_objectSetupLines.ContainsKey(expressionText)) return;
-            var length = Expression.Property(array, "Length");
-            var tooSmall = Expression.LessThanOrEqual(length, binaryExpression.Right);
-            var resizeMethod = Helpers.ResizeMethod.MakeGenericMethod(array.Type.GetElementType());
+
+            // Resize array
+            var resizeMethod = Helpers.ResizeAndAddNewMethod.MakeGenericMethod(array.Type.GetElementType());
+
+            // array = Resize(array, minSize)
             var resize = Expression.Call(resizeMethod, array, binaryExpression.Right);
             var assign = Expression.Assign(array, resize);
-            _objectSetupLines.Add(expressionText, Expression.IfThen(tooSmall, assign));
+
+            _objectSetupLines.Add(expressionText, assign);
         }
 
         private void EnsureCollectionSize(Expression collection, Expression index)
@@ -115,7 +118,7 @@
                 var itemType = collectionType.GetGenericArguments()[0];
                 if (typeof (ICollection<>).MakeGenericType(itemType).IsAssignableFrom(collectionType))
                 {
-                    var ensureSizeMethod = Helpers.FillMethod.MakeGenericMethod(itemType);
+                    var ensureSizeMethod = Helpers.FillAndAddNewMethod.MakeGenericMethod(itemType);
                     _objectSetupLines.Add(expressionText, Expression.Call(ensureSizeMethod, collection, index));
                     return;
                 }
@@ -139,6 +142,7 @@
             }
             else
             {
+                // If the type is an interface, this is going to break
                 newExpression = Expression.New(property.Type);
             }
 
