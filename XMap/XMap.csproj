@@ -42,6 +42,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="ObjectToXmlFuncGenerator.cs" />
     <Compile Include="XmlToObjectActionGenerator.cs" />
     <Compile Include="Helpers.cs" />
     <Compile Include="SimpleActionGenerator.cs" />
