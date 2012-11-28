@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Linq.Expressions;
-using System.Reflection;
 using System.Xml.Linq;
 
 namespace XMap
@@ -15,8 +13,6 @@ namespace XMap
     /// <typeparam name="T">The type of the object graph root.</typeparam>
     public class XmlMapper<T> : IEnumerable where T : class, new()
     {
-        private readonly XmlToObjectActionGenerator<T> _xmlToObjectActionGenerator = new XmlToObjectActionGenerator<T>();
-
         private readonly Dictionary<XName, Action<string, T>> _attributeActions =
             new Dictionary<XName, Action<string, T>>();
 
@@ -40,6 +36,7 @@ namespace XMap
             new Dictionary<Tuple<XName, XName>, Action<string, string, T>>();
 
         private readonly ObjectToXmlFuncGenerator<T> _objectToXmlFuncGenerator = new ObjectToXmlFuncGenerator<T>();
+        private readonly XmlToObjectActionGenerator<T> _xmlToObjectActionGenerator = new XmlToObjectActionGenerator<T>();
 
         IEnumerator IEnumerable.GetEnumerator()
         {
@@ -150,21 +147,21 @@ namespace XMap
         private void AddAttributeFunc<TProperty>(XName name, Expression<Func<T, TProperty>> propFunc,
                                                  Expression<Func<TProperty, string>> toStringFunc = null)
         {
-            var func = ObjectToXmlFuncGenerator<T>.GenerateAttributeFunc(propFunc, toStringFunc);
+            Func<T, string> func = ObjectToXmlFuncGenerator<T>.GenerateAttributeFunc(propFunc, toStringFunc);
             _attributeFuncs.Add(name, func);
         }
 
         private void AddAttributePairFunc<TProperty>(Tuple<XName, XName> name, Expression<Func<T, TProperty>> propFunc,
                                                      Expression<Func<TProperty, Tuple<string, string>>> toStringsFunc)
         {
-            var func = ObjectToXmlFuncGenerator<T>.GenerateAttributePairFunc(propFunc, toStringsFunc);
+            Func<T, Tuple<string, string>> func = ObjectToXmlFuncGenerator<T>.GenerateAttributePairFunc(propFunc, toStringsFunc);
             _attributePairFuncs.Add(name, func);
         }
 
         private void AddSingleElementFunc<TProperty>(XName name, Expression<Func<T, TProperty>> propFunc,
                                                      XmlMapper<TProperty> mapper) where TProperty : class, new()
         {
-            var func = ObjectToXmlFuncGenerator<T>.GenerateSingleElemenetFunc(name, propFunc, mapper);
+            Func<T, XElement> func = ObjectToXmlFuncGenerator<T>.GenerateSingleElemenetFunc(name, propFunc, mapper);
             _elementFuncs.Add(name, func);
         }
 
@@ -172,7 +169,7 @@ namespace XMap
                                                          Expression<Func<T, ICollection<TProperty>>> propFunc,
                                                          XmlMapper<TProperty> mapper) where TProperty : class, new()
         {
-            var func = ObjectToXmlFuncGenerator<T>.GenerateCollectionElementFunc(name, propFunc, mapper);
+            Func<T, XElement> func = ObjectToXmlFuncGenerator<T>.GenerateCollectionElementFunc(name, propFunc, mapper);
             _elementCollectionFuncs.Add(name, func);
         }
 
@@ -293,25 +290,45 @@ namespace XMap
         /// </returns>
         public XElement ToXml(T obj, XElement xml)
         {
-            foreach (var attributeFunc in _attributeFuncs)
+            MapToAttributes(obj, xml);
+            MapToMultipleAttributes(obj, xml);
+            MapToElements(obj, xml);
+            MapCollectionToElements(obj, xml);
+            return xml;
+        }
+
+        private void MapCollectionToElements(T obj, XElement xml)
+        {
+            foreach (var elementFunc in _elementCollectionFuncs)
             {
-                xml.SetAttributeValue(attributeFunc.Key, attributeFunc.Value(obj));
+                xml.Add(elementFunc.Value(obj));
             }
+        }
+
+        private void MapToElements(T obj, XElement xml)
+        {
+            foreach (var elementFunc in _elementFuncs)
+            {
+                xml.Add(elementFunc.Value(obj));
+            }
+        }
+
+        private void MapToMultipleAttributes(T obj, XElement xml)
+        {
             foreach (var attributePairFunc in _attributePairFuncs)
             {
                 Tuple<string, string> values = attributePairFunc.Value(obj);
                 xml.SetAttributeValue(attributePairFunc.Key.Item1, values.Item1);
                 xml.SetAttributeValue(attributePairFunc.Key.Item2, values.Item2);
             }
-            foreach (var elementFunc in _elementFuncs)
+        }
+
+        private void MapToAttributes(T obj, XElement xml)
+        {
+            foreach (var attributeFunc in _attributeFuncs)
             {
-                xml.Add(elementFunc.Value(obj));
+                xml.SetAttributeValue(attributeFunc.Key, attributeFunc.Value(obj));
             }
-            foreach (var elementFunc in _elementCollectionFuncs)
-            {
-                xml.Add(elementFunc.Value(obj));
-            }
-            return xml;
         }
 
         /// <summary>
