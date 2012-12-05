@@ -209,6 +209,68 @@
             Assert.Equal("Collins", actual.Attribute("lname").Value);
         }
 
+        [Fact]
+        public void CreateElementFromEmptyCollection()
+        {
+            var astronautMapper = new XmlMapper<Astronaut>
+                                      {
+                                          {"name", a => a.Name},
+                                      };
+
+            var mapper = new XmlMapper<Spaceship>
+                             {
+                                 {"crew/member", o => o.Crew, astronautMapper},
+                             };
+
+            var spaceship = new Spaceship
+                                {
+                                    Crew = new List<Astronaut>(),
+                                };
+
+            var actual = mapper.ToXml(spaceship, "spaceship");
+
+            Assert.Equal("<crew />", actual.Element("crew").ToString());
+
+        }
+
+        [Fact]
+        public void CreateElementFromNullCollection()
+        {
+            var astronautMapper = new XmlMapper<Astronaut>
+                                      {
+                                          {"name", a => a.Name},
+                                      };
+
+            var mapper = new XmlMapper<Spaceship>
+                             {
+                                 {"crew/member", o => o.Crew, astronautMapper},
+                             };
+
+            var spaceship = new Spaceship
+            {
+                Crew = null,
+            };
+
+            var actual = mapper.ToXml(spaceship, "spaceship");
+
+            Assert.Equal("<crew />", actual.Element("crew").ToString());
+        }
+
+        [Fact]
+        public void CreateElementFromNullObject()
+        {
+            var astronautMapper = new XmlMapper<Astronaut>
+                                      {
+                                          {"name", a => a.Name},
+                                      };
+
+            Astronaut astronaut = null;
+
+            var actual = astronautMapper.ToXml(astronaut, "astronaut");
+
+            Assert.Equal("<astronaut />", actual.ToString());
+        }
+
         static Tuple<string, string> Split(string source)
         {
             var bits = source.Split(' ');
