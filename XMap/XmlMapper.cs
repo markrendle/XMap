@@ -275,7 +275,8 @@ namespace XMap
         /// </returns>
         public XElement ToXml(T obj, XName elementName)
         {
-            return ToXml(obj, new XElement(elementName));
+            var element = new XElement(elementName);
+            return obj == null ? element : ToXml(obj, new XElement(elementName));
         }
 
         /// <summary>
@@ -343,6 +344,8 @@ namespace XMap
         public XElement ToXml(IEnumerable<T> objs, XName containerName, XName childName)
         {
             var container = new XElement(containerName);
+            if (objs == null) return container;
+
             foreach (XElement child in ToXml(objs, childName))
             {
                 container.Add(child);
