@@ -275,8 +275,7 @@ namespace XMap
         /// </returns>
         public XElement ToXml(T obj, XName elementName)
         {
-            var element = new XElement(elementName);
-            return obj == null ? element : ToXml(obj, new XElement(elementName));
+            return obj == null ? new XElement(elementName) : ToXml(obj, new XElement(elementName));
         }
 
         /// <summary>
